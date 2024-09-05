@@ -1,0 +1,177 @@
+diff --git a/src/err.cpp b/src/err.cpp
+index 74d062c..05cb4bb 100644
+--- a/src/err.cpp
++++ b/src/err.cpp
+@@ -6,6 +6,9 @@
+ 
+ const char *zmq::errno_to_string (int errno_)
+ {
++#if defined(__COSMOPOLITAN__)
++    return strerror (errno_);
++#else
+     switch (errno_) {
+ #if defined ZMQ_HAVE_WINDOWS
+         case ENOTSUP:
+@@ -45,6 +48,7 @@ const char *zmq::errno_to_string (int errno_)
+ #pragma warning(pop)
+ #endif
+     }
++#endif
+ }
+ 
+ void zmq::zmq_abort (const char *errmsg_)
+diff --git a/src/io_thread.cpp b/src/io_thread.cpp
+index 6a6c39d..75df945 100644
+--- a/src/io_thread.cpp
++++ b/src/io_thread.cpp
+@@ -11,7 +11,7 @@
+ 
+ zmq::io_thread_t::io_thread_t (ctx_t *ctx_, uint32_t tid_) :
+     object_t (ctx_, tid_),
+-    _mailbox_handle (static_cast<poller_t::handle_t> (NULL))
++    _mailbox_handle (static_cast<poller_t::handle_t> (0))
+ {
+     _poller = new (std::nothrow) poller_t (*ctx_);
+     alloc_assert (_poller);
+diff --git a/src/reaper.cpp b/src/reaper.cpp
+index 4361a7e..5d6ea88 100644
+--- a/src/reaper.cpp
++++ b/src/reaper.cpp
+@@ -8,7 +8,7 @@
+ 
+ zmq::reaper_t::reaper_t (class ctx_t *ctx_, uint32_t tid_) :
+     object_t (ctx_, tid_),
+-    _mailbox_handle (static_cast<poller_t::handle_t> (NULL)),
++    _mailbox_handle (static_cast<poller_t::handle_t> (0)),
+     _poller (NULL),
+     _sockets (0),
+     _terminating (false)
+diff --git a/src/socket_base.cpp b/src/socket_base.cpp
+index 5a9adcd..5c8d4b7 100644
+--- a/src/socket_base.cpp
++++ b/src/socket_base.cpp
+@@ -220,7 +220,7 @@ zmq::socket_base_t::socket_base_t (ctx_t *parent_,
+     _ctx_terminated (false),
+     _destroyed (false),
+     _poller (NULL),
+-    _handle (static_cast<poller_t::handle_t> (NULL)),
++    _handle (static_cast<poller_t::handle_t> (0)),
+     _last_tsc (0),
+     _ticks (0),
+     _rcvmore (false),
+diff --git a/src/stream_connecter_base.cpp b/src/stream_connecter_base.cpp
+index 8dd9a6d..77f2c46 100644
+--- a/src/stream_connecter_base.cpp
++++ b/src/stream_connecter_base.cpp
+@@ -26,7 +26,7 @@ zmq::stream_connecter_base_t::stream_connecter_base_t (
+     io_object_t (io_thread_),
+     _addr (addr_),
+     _s (retired_fd),
+-    _handle (static_cast<handle_t> (NULL)),
++    _handle (static_cast<handle_t> (0)),
+     _socket (session_->get_socket ()),
+     _delayed_start (delayed_start_),
+     _reconnect_timer_started (false),
+@@ -116,7 +116,7 @@ int zmq::stream_connecter_base_t::get_new_reconnect_ivl ()
+ void zmq::stream_connecter_base_t::rm_handle ()
+ {
+     rm_fd (_handle);
+-    _handle = static_cast<handle_t> (NULL);
++    _handle = static_cast<handle_t> (0);
+ }
+ 
+ void zmq::stream_connecter_base_t::close ()
+diff --git a/src/stream_engine_base.cpp b/src/stream_engine_base.cpp
+index 71e09b1..ac60738 100644
+--- a/src/stream_engine_base.cpp
++++ b/src/stream_engine_base.cpp
+@@ -97,7 +97,7 @@ zmq::stream_engine_base_t::stream_engine_base_t (
+     _has_heartbeat_timer (false),
+     _peer_address (get_peer_address (fd_)),
+     _s (fd_),
+-    _handle (static_cast<handle_t> (NULL)),
++    _handle (static_cast<handle_t> (0)),
+     _plugged (false),
+     _handshaking (true),
+     _io_error (false),
+diff --git a/src/stream_listener_base.cpp b/src/stream_listener_base.cpp
+index 350093a..98f90e7 100644
+--- a/src/stream_listener_base.cpp
++++ b/src/stream_listener_base.cpp
+@@ -20,7 +20,7 @@ zmq::stream_listener_base_t::stream_listener_base_t (
+     own_t (io_thread_, options_),
+     io_object_t (io_thread_),
+     _s (retired_fd),
+-    _handle (static_cast<handle_t> (NULL)),
++    _handle (static_cast<handle_t> (0)),
+     _socket (socket_)
+ {
+ }
+@@ -47,7 +47,7 @@ void zmq::stream_listener_base_t::process_plug ()
+ void zmq::stream_listener_base_t::process_term (int linger_)
+ {
+     rm_fd (_handle);
+-    _handle = static_cast<handle_t> (NULL);
++    _handle = static_cast<handle_t> (0);
+     close ();
+     own_t::process_term (linger_);
+ }
+diff --git a/src/thread.cpp b/src/thread.cpp
+index e013a77..84e74e2 100644
+--- a/src/thread.cpp
++++ b/src/thread.cpp
+@@ -13,6 +13,10 @@
+ #include "pthread.h"
+ #endif
+ 
++#ifdef __COSMOPOLITAN__
++#include <sched.h>
++#endif
++
+ bool zmq::thread_t::get_started () const
+ {
+     return _started;
+@@ -306,7 +310,7 @@ void zmq::thread_t::
+ 
+     rc = pthread_setschedparam (pthread_self (), policy, &param);
+ 
+-#if defined(__FreeBSD_kernel__) || defined(__FreeBSD__)
++#if defined(__FreeBSD_kernel__) || defined(__FreeBSD__) || defined(__COSMOPOLITAN__)
+     // If this feature is unavailable at run-time, don't abort.
+     if (rc == ENOSYS)
+         return;
+diff --git a/src/udp_engine.cpp b/src/udp_engine.cpp
+index fe0a536..8a950ff 100644
+--- a/src/udp_engine.cpp
++++ b/src/udp_engine.cpp
+@@ -32,7 +32,7 @@ zmq::udp_engine_t::udp_engine_t (const options_t &options_) :
+     _plugged (false),
+     _fd (-1),
+     _session (NULL),
+-    _handle (static_cast<handle_t> (NULL)),
++    _handle (static_cast<handle_t> (0)),
+     _address (NULL),
+     _options (options_),
+     _send_enabled (false),
+diff --git a/unittests/unittest_poller.cpp b/unittests/unittest_poller.cpp
+index 8ec4db4..aee21ac 100644
+--- a/unittests/unittest_poller.cpp
++++ b/unittests/unittest_poller.cpp
+@@ -49,7 +49,7 @@ struct test_events_t : zmq::i_poll_events
+     void in_event () ZMQ_OVERRIDE
+     {
+         _poller.rm_fd (_handle);
+-        _handle = (zmq::poller_t::handle_t) NULL;
++        _handle = (zmq::poller_t::handle_t) 0;
+ 
+         // this must only be incremented after rm_fd
+         in_events.add (1);
+@@ -66,7 +66,7 @@ struct test_events_t : zmq::i_poll_events
+     {
+         LIBZMQ_UNUSED (id_);
+         _poller.rm_fd (_handle);
+-        _handle = (zmq::poller_t::handle_t) NULL;
++        _handle = (zmq::poller_t::handle_t) 0;
+ 
+         // this must only be incremented after rm_fd
+         timer_events.add (1);
